@@ -8,7 +8,7 @@ from .. import db
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from ..utils import haversine, get_coordinates
-import random
+from sqlalchemy import func
 
 booking_bp = Blueprint('booking_bp', __name__, url_prefix='/api/bookings')
 
@@ -118,12 +118,17 @@ def update_worker_availability(worker, date_str, time_slot):
     if worker.availability[day_index][slot_index]:
         worker.availability[day_index][slot_index] = False
         db.session.add(worker)
+        db.session.commit()
         print(f"Updated availability for worker {worker.id} on {date_str} at {time_slot}: {worker.availability}")
     else:
         print(f"Worker {worker.id} is already booked on {date_str} at {time_slot}.")
 def generate_unique_booking_id():
-    # Generate a unique booking_id; ensure it's unique in your database
-    return random.randint(1000, 9999)  # A simple method to generate a booking ID
+    # Retrieve the max booking_id from the database
+    max_booking_id = db.session.query(func.max(Booking.booking_id)).scalar()
+    if max_booking_id is None:
+        max_booking_id = 1000  # Start from 1001 if there are no existing bookings
+    return max_booking_id + 1  # Increment to generate the next unique booking_id
+ # A simple method to generate a booking ID
 
 @booking_bp.route('/create-booking', methods=['POST'])
 @jwt_required()
@@ -190,17 +195,16 @@ def create_booking():
                 update_worker_availability(worker, current_date.strftime('%Y-%m-%d'), data['time_slot'])
             else:
                 print(f"Worker {worker.id} not available on {current_date.strftime('%Y-%m-%d')} at {data['time_slot']}")
-
+        booking_id += 1
         current_date = calculate_next_date(current_date, recurrence)
 
     db.session.commit()
 
     return jsonify([booking.to_dict() for booking in booking_instances]), 201
 
-@booking_bp.route('/booking/<int:booking_id>/workers', methods=['GET'])
+@booking_bp.route('/<int:booking_id>/workers', methods=['GET'])
 def get_workers_by_booking(booking_id):
     workers_query = db.session.query(
-        Booking.booking_id,
         Booking.booking_instance_id,
         Worker.id,
         Worker.name,
@@ -227,13 +231,14 @@ def get_workers_by_booking(booking_id):
     
     return jsonify(workers_list), 200
 
+
 @booking_bp.route('/get-all-bookings', methods=['GET'])
 @jwt_required()
 def get_all_bookings():
     bookings = Booking.query.all()
     return jsonify([booking.to_dict() for booking in bookings]), 200
 
-@booking_bp.route('/bookings/<int:booking_id>', methods=['GET'])
+@booking_bp.route('/get-booking-details/<int:booking_id>', methods=['GET'])
 def get_booking_details(booking_id):
     booking = Booking.query.filter_by(booking_id=booking_id).first()
     if not booking:
