@@ -108,14 +108,28 @@ const SearchPage = () => {
                     const mappedBookings = action.payload.map((booking) => ({
                         ...booking,
                         key: booking.booking_id,
-                        client_name: booking.client.name,
-                        workers: booking.workers,
-                        client_address: booking.client.address,
-                        client_contact: booking.client.contact_details,
-                        total_panels: booking.client.total_panels,
-                        charges_per_clean: booking.client.charge_per_clean,
+                        client_name: booking.client
+                            ? booking.client.name
+                            : "Unknown Client",
+                        worker_names:
+                            booking.workers && booking.workers.length > 0
+                                ? booking.workers
+                                      .map((worker) => worker.name)
+                                      .join(", ")
+                                : "Unknown Worker",
+                        client_address: booking.client
+                            ? booking.client.address
+                            : "Unknown Address",
+                        client_contact: booking.client
+                            ? booking.client.contact_details
+                            : "Unknown Contact",
+                        total_panels: booking.client
+                            ? booking.client.total_panels
+                            : "Unknown",
+                        charges_per_clean: booking.client
+                            ? booking.client.charge_per_clean
+                            : "Unknown",
                     }));
-                    // Sort by date
                     mappedBookings.sort(
                         (a, b) => new Date(a.date) - new Date(b.date)
                     );
@@ -747,9 +761,6 @@ const SearchPage = () => {
                                     <Option value="Worker ID">Worker ID</Option>
                                     <Option value="Client Name">
                                         Client Name
-                                    </Option>
-                                    <Option value="Worker Name">
-                                        Worker Name
                                     </Option>
                                     <Option value="Date">Date</Option>
                                     <Option value="Slot">Slot</Option>

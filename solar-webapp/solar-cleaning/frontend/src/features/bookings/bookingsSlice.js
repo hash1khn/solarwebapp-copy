@@ -67,12 +67,16 @@ export const getById = createAsyncThunk(
     async (id, { rejectWithValue, dispatch, getState }) => {
         try {
             const state = getState();
+            // If bookings are not already loaded, fetch them
             if (state.bookings.bookings.length === 0) {
                 await dispatch(getAllBookings());
             }
+
+            // Find the booking with the matching booking_id
             const booking = state.bookings.bookings.find(
-                (booking) => booking.id === parseInt(id, 10)
+                (booking) => booking.booking_id === parseInt(id, 10)
             );
+
             if (!booking) {
                 throw new Error("Booking not found");
             }
@@ -82,6 +86,7 @@ export const getById = createAsyncThunk(
         }
     }
 );
+
 
 // Async thunk for fetching bookings by client ID
 export const getByClientId = createAsyncThunk(
