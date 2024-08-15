@@ -125,12 +125,15 @@ def update_worker_availability(worker, date_str, time_slot):
         print(f"Updated availability for worker {worker.id} on {date_str} at {time_slot}: {worker.availability}")
     else:
         print(f"Worker {worker.id} is already booked on {date_str} at {time_slot}.")
-def generate_unique_booking_id():
-    # Retrieve the max booking_id from the database
-    max_booking_id = db.session.query(func.max(Booking.booking_id)).scalar()
-    if max_booking_id is None:
-        max_booking_id = 1000  # Start from 1001 if there are no existing bookings
-    return max_booking_id + 1  # Increment to generate the next unique booking_id
+def generate_unique_booking_id(last_booking_id=None):
+    # Generate a unique booking_id based on a sequence
+    if last_booking_id is not None:
+        return last_booking_id + 1
+    last_booking = Booking.query.order_by(Booking.booking_id.desc()).first()
+    if last_booking:
+        return last_booking.booking_id + 1
+    else:
+        return 1001 # Increment to generate the next unique booking_id
  # A simple method to generate a booking ID
 def find_nearest_worker(client_location, available_workers):
     nearest_worker = None
@@ -180,59 +183,39 @@ def create_booking():
         worker_ids = [nearest_worker.id]
 
     booking_instances = []
+    for recurrence_count in range(data.get('recurrence_period', 1)):
+        if recurrence_count > 0:
+            # Increment booking_id for each recurrence
+            booking_id = generate_unique_booking_id(booking_id)
 
-    for worker_id in worker_ids:
-        worker = Worker.query.get(worker_id)
-        if not worker:
-            return jsonify({'error': 'Not Found', 'message': f'Worker with id {worker_id} not found'}), 404
+        current_date = calculate_next_date(datetime.strptime(data['date'], '%Y-%m-%d').date(), data['recurrence'], recurrence_count)
 
-        # Create the initial booking
-        new_booking = Booking(
-            booking_id=booking_id,  # Use the same booking_id for all workers
-            client_id=client.id,
-            worker_id=worker.id,
-            date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-            time_slot=data['time_slot'],
-            status=data['status'],
-            recurrence=data.get('recurrence'),
-            recurrence_period=data.get('recurrence_period')
-        )
+        for worker_id in worker_ids:
+            worker = Worker.query.get(worker_id)
+            if not worker:
+                return jsonify({'error': 'Not Found', 'message': f'Worker with id {worker_id} not found'}), 404
 
-        # Update worker availability
-        day_index = get_day_index(data['date'])
-        slot_index = get_slot_index(data['time_slot'])
-        if worker.availability[day_index][slot_index]:
-            worker.availability[day_index][slot_index] = False
+            # Create the booking
+            new_booking = Booking(
+                booking_id=booking_id,  # Use the same booking_id for all workers
+                client_id=client.id,
+                worker_id=worker.id,
+                date=current_date,
+                time_slot=data['time_slot'],
+                status=data['status'],
+                recurrence=data.get('recurrence'),
+                recurrence_period=data.get('recurrence_period')
+            )
 
-        db.session.add(new_booking)
-        db.session.add(worker)
-        booking_instances.append(new_booking)
+            # Update worker availability
+            day_index = get_day_index(current_date.strftime('%Y-%m-%d'))
+            slot_index = get_slot_index(data['time_slot'])
+            if worker.availability[day_index][slot_index]:
+                worker.availability[day_index][slot_index] = False
 
-        # Handle recurrence if specified
-        if 'recurrence' in data and 'recurrence_period' in data:
-            current_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
-            for _ in range(1, data['recurrence_period']):  # Skip the first one, already created
-                next_date = calculate_next_date(current_date, data['recurrence'], 1)
-                current_date = next_date
-
-                new_booking = Booking(
-                    booking_id=generate_unique_booking_id(),  # Generate a new booking_id for each recurrence
-                    client_id=client.id,
-                    worker_id=worker.id,
-                    date=current_date,
-                    time_slot=data['time_slot'],
-                    status=data['status'],
-                    recurrence=data.get('recurrence'),
-                    recurrence_period=data.get('recurrence_period')
-                )
-
-                day_index = get_day_index(current_date.strftime('%Y-%m-%d'))
-                if worker.availability[day_index][slot_index]:
-                    worker.availability[day_index][slot_index] = False
-
-                db.session.add(new_booking)
-                db.session.add(worker)
-                booking_instances.append(new_booking)
+            db.session.add(new_booking)
+            db.session.add(worker)
+            booking_instances.append(new_booking)
 
     try:
         db.session.commit()
@@ -241,6 +224,7 @@ def create_booking():
         return jsonify({'error': 'Database Error', 'message': str(e)}), 500
 
     return jsonify([booking.to_dict() for booking in booking_instances]), 201
+
 
 #to get only workers with same booking_id (for editing and searching)
 @booking_bp.route('/<int:booking_id>/workers', methods=['GET'])
