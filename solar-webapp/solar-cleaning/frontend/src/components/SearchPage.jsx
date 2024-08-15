@@ -300,7 +300,6 @@ const SearchPage = () => {
                                     ...action.payload,
                                     key: action.payload.id,
                                     client_name: action.payload.client.name,
-                                    worker_name: action.payload.worker.name,
                                     client_address:
                                         action.payload.client.address, // Adding client address
                                     client_contact:
