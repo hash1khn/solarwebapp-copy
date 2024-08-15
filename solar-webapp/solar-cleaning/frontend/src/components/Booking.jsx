@@ -222,59 +222,74 @@ const Booking = () => {
         const timeSlot = Object.keys(timeSlots).find(
             (key) => timeSlots[key] === values.time_slot
         );
-        console.log(`Day: ${day}, Time Slot: ${timeSlot}`);
-
-        const isAvailable = await checkWorkerAvailability(
-            selectedWorkerIds[0],
-            day,
-            timeSlot
-        );
-
+    
+        // We no longer check the number of worker_ids, just ensure availability of the remaining workers
+        const isAvailable = workerIds.every(async (workerId) => {
+            return await checkWorkerAvailability(workerId, day, timeSlot);
+        });
+    
         if (!isAvailable) {
             return;
         }
-
+    
         const formattedValues = {
             ...values,
-            client_id: parseInt(values.client_id, 10),
-            worker_id: selectedWorkerIds,
-            time_slot: values.time_slot, // Send time_slot string directly
-            recurrence_period: parseInt(values.recurrence_period, 10), // Convert to integer
+            client_id: selectedClientId,
+            worker_ids: workerIds,  // Send the updated worker IDs
+            time_slot: values.time_slot,
+            recurrence_period: parseInt(values.recurrence_period, 10),
         };
-
+    
         try {
             await dispatch(
                 updateBooking({ id: bookingId, updatedData: formattedValues })
             ).unwrap();
             setIsCreateModalVisible(false);
             form.resetFields();
+            setWorkerTags([]);
+            setWorkerIds([]);
             setIsEditMode(false);
         } catch (error) {
             console.error("Error updating booking:", error);
         }
     };
+    
 
     const handleEditBooking = async () => {
         const id = prompt("Enter Booking ID to edit:");
         if (!id) return;
-
+    
         const bookingDetails = await fetchBookingDetails(id);
         if (!bookingDetails) {
             alert("Booking not found!");
             return;
         }
-
+    
+        // Populate the form with booking details
         const values = {
             ...bookingDetails,
-            client_id: bookingDetails.client_id.toString(),
-            time_slot: bookingDetails.time_slot, // Keep the time slot string as is
+            client_id: bookingDetails.client.id.toString(),
+            time_slot: bookingDetails.time_slot,
+            status: bookingDetails.status,
+            recurrence: bookingDetails.recurrence,
+            recurrence_period: bookingDetails.recurrence_period.toString(),
         };
-
+    
+        // Set form values
         form.setFieldsValue(values);
+    
+        // Set worker tags and worker IDs
+        const workerNames = bookingDetails.workers.map((worker) => worker.name);
+        const workerIds = bookingDetails.workers.map((worker) => worker.id);
+        setWorkerTags(workerNames);
+        setWorkerIds(workerIds);
+    
+        // Set the booking ID and switch to edit mode
         setBookingId(id);
         setIsEditMode(true);
         setIsCreateModalVisible(true);
     };
+    
 
     const timeSlots = {
         0: "09:00-11:00",
