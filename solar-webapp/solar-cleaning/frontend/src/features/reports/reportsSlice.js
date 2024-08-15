@@ -37,7 +37,7 @@ export const getAllBookingInstances = createAsyncThunk(
     "reports/getAllBookingInstances",
     async (_, { rejectWithValue }) => {
         try {
-            const response = await axiosInstance.get("/all-instances");
+            const response = await axiosInstance.get("/api/bookings/all-instances");
             console.log(response.data);
             return response.data;
         } catch (error) {
