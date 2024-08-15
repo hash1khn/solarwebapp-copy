@@ -10,6 +10,8 @@ from dateutil.relativedelta import relativedelta
 from ..utils import haversine, get_coordinates
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
+from collections import defaultdict
+
 
 booking_bp = Blueprint('booking_bp', __name__, url_prefix='/api/bookings')
 
@@ -441,14 +443,24 @@ def get_all_booking_details():
     if not all_bookings:
         return jsonify({'error': 'Not Found', 'message': 'No bookings found'}), 404
 
-    bookings_response = []
+    bookings_response = defaultdict(lambda: {
+        "client": {},
+        "booking_id": None,
+        "date": None,
+        "time_slot": None,
+        "status": None,
+        "recurrence": None,
+        "recurrence_period": None,
+        "workers": []
+    })
 
     for booking in all_bookings:
-        # Get the client details only for the first occurrence of the client in the booking instances
-        client = booking.client
+        booking_id = booking.booking_id
 
-        booking_detail = {
-            "client": {
+        # If the client info hasn't been added yet, add it
+        if not bookings_response[booking_id]['client']:
+            client = booking.client
+            bookings_response[booking_id]['client'] = {
                 "id": client.id,
                 "name": client.name,
                 "address": client.address,
@@ -458,31 +470,34 @@ def get_all_booking_details():
                 "latitude": client.latitude,
                 "longitude": client.longitude,
                 "total_panels": client.total_panels
-            },
-            "booking_id": booking.booking_id,
-            "date": booking.date.strftime('%Y-%m-%d'),
-            "time_slot": booking.time_slot,
-            "status": booking.status,
-            "recurrence": booking.recurrence,
-            "recurrence_period": booking.recurrence_period,
-            "workers": []
-        }
+            }
 
-        # Gather all worker details associated with the current booking
+            # Add the booking-level information
+            bookings_response[booking_id]["booking_id"] = booking.booking_id
+            bookings_response[booking_id]["date"] = booking.date.strftime('%Y-%m-%d')
+            bookings_response[booking_id]["time_slot"] = booking.time_slot
+            bookings_response[booking_id]["status"] = booking.status
+            bookings_response[booking_id]["recurrence"] = booking.recurrence
+            bookings_response[booking_id]["recurrence_period"] = booking.recurrence_period
+
+        # Add the worker details
         worker = Worker.query.get(booking.worker_id)
         if worker:
-            booking_detail['workers'].append({
+            worker_detail = {
                 "id": worker.id,
                 "name": worker.name,
                 "area": worker.area,
                 "latitude": worker.latitude,
                 "longitude": worker.longitude,
                 "availability": worker.availability
-            })
+            }
+            if worker_detail not in bookings_response[booking_id]["workers"]:
+                bookings_response[booking_id]["workers"].append(worker_detail)
 
-        bookings_response.append(booking_detail)
+    # Convert defaultdict to a list
+    bookings_response_list = list(bookings_response.values())
 
-    return jsonify(bookings_response), 200
+    return jsonify(bookings_response_list), 200
 
 @booking_bp.route('/delete-booking/<int:booking_id>', methods=['DELETE'])
 @jwt_required()
