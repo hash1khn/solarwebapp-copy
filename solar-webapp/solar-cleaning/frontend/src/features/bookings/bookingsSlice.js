@@ -27,13 +27,12 @@ axiosInstance.interceptors.request.use(
     (error) => Promise.reject(error)
 );
 
-// Async thunk for fetching bookings
 export const getAllBookings = createAsyncThunk(
     "bookings/get-all-bookings",
     async (_, { rejectWithValue }) => {
         try {
             const response = await axiosInstance.get(
-                "/api/bookings/get-all-bookings"
+                "/api/bookings/all-booking-details"
             );
             console.log(response.data);
             return response.data;
@@ -42,6 +41,22 @@ export const getAllBookings = createAsyncThunk(
         }
     }
 );
+
+// // Async thunk for fetching bookings
+// export const getAllBookings = createAsyncThunk(
+//     "bookings/get-all-bookings",
+//     async (_, { rejectWithValue }) => {
+//         try {
+//             const response = await axiosInstance.get(
+//                 "/api/bookings/get-all-bookings"
+//             );
+//             console.log(response.data);
+//             return response.data;
+//         } catch (error) {
+//             return rejectWithValue(error.response.data.message);
+//         }
+//     }
+// );
 
 export const getById = createAsyncThunk(
     "bookings/get-by-id",

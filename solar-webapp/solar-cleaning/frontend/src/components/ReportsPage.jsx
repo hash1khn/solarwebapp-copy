@@ -10,8 +10,8 @@ import "owl.carousel/dist/assets/owl.theme.default.css";
 import "../../public/css/responsive.css";
 import "../../public/css/style.css";
 import "./ReportsPage.css";
-import Spreadsheet from "react-spreadsheet";
-import { getAllReports, getAllBookingInstances } from "../features/reports/reportsSlice"; // Import your new thunk
+import Spreadsheet from "react-spreadsheet";    
+import { getAllReports, getAllBookingInstances } from "../features/reports/reportsSlice";
 import Header from "./Header";
 import Footer from "./Footer";
 
@@ -41,6 +41,7 @@ const ReportsPage = () => {
                         });
 
                         return [
+                            { value: booking.booking_id }, 
                             { value: booking.date },
                             { value: dayOfWeek },
                             { value: booking.client.name },
@@ -189,6 +190,7 @@ const ReportsPage = () => {
 
     const columns = {
         bookings: [
+            "Booking ID",
             "Date",
             "Day",
             "Client Name",
