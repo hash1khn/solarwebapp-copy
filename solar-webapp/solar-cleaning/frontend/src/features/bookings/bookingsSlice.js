@@ -34,8 +34,12 @@ export const getAllBookings = createAsyncThunk(
             const response = await axiosInstance.get(
                 "/api/bookings/all-booking-details"
             );
+            console.log('rida ashfaq qureshi');
             console.log(response.data);
-            return response.data;
+            return response.data.map((booking) => ({
+                ...booking,
+                id: booking.booking_id, // Map booking_id to id for consistency
+            }));
         } catch (error) {
             return rejectWithValue(error.response.data.message);
         }
