@@ -8,6 +8,7 @@ from .. import db
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from ..utils import haversine, get_coordinates
+import random
 
 booking_bp = Blueprint('booking_bp', __name__, url_prefix='/api/bookings')
 
@@ -30,146 +31,171 @@ def get_slot_index(time_slot):
     return slots.get(time_slot)
 
 
-def add_recurring_bookings(client_id, worker_id, start_date, time_slot, status, recurrence, recurrence_period):
-    current_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+# def add_recurring_bookings(client_id, worker_id, start_date, time_slot, status, recurrence, recurrence_period):
+#     current_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+#     recurrence_days = {
+#         'daily': 1,
+#         'weekly': 7,
+#         'biweekly': 14,
+#         'monthly': 30,
+#         'ten': 10,  # Added ten days option
+#         'twenty': 20  # Added twenty days option
+#     }
+
+#     if recurrence in recurrence_days:
+#         interval = recurrence_days[recurrence]
+#         end_date = current_date + relativedelta(months=recurrence_period)
+
+#         print(f"Start Date: {current_date}")
+#         print(f"End Date: {end_date}")
+#         print(f"Recurrence Interval (days): {interval}")
+
+#         while current_date <= end_date:
+#             print(f"Current Date: {current_date}, End Date: {end_date}")
+#             print(f"Checking availability for date: {current_date} and time_slot: {time_slot}")
+#             day_index = get_day_index(current_date.strftime('%Y-%m-%d'))
+#             slot_index = get_slot_index(time_slot)
+#             print(f"Day index: {day_index}, Slot index: {slot_index}")
+
+#             worker = Worker.query.get(worker_id)  # Fetch fresh instance
+#             print(f"Worker availability before booking: {worker.availability}")
+
+#             # Check if a booking already exists
+#             existing_booking = Booking.query.filter_by(
+#                 client_id=client_id,
+#                 worker_id=worker_id,
+#                 date=current_date,
+#                 time_slot=time_slot
+#             ).first()
+
+#             if existing_booking:
+#                 print(f"Booking already exists for date: {current_date} and time_slot: {time_slot}")
+#             elif worker and worker.availability[day_index][slot_index]:
+#                 new_booking = Booking(
+#                     client_id=client_id,
+#                     worker_id=worker_id,
+#                     date=current_date,
+#                     time_slot=time_slot,
+#                     status=status,
+#                     recurrence=recurrence,
+#                     recurrence_period=recurrence_period  # Save the recurrence period
+#                 )
+#                 worker.availability[day_index][slot_index] = False
+#                 db.session.add(worker)
+#                 db.session.add(new_booking)
+#                 db.session.commit()  # Commit after each addition
+#                 print(f"Booking added for date: {current_date} and time_slot: {time_slot}")
+#                 print(f"Worker availability after booking: {worker.availability}")
+#             else:
+#                 print(f"Worker not available on date: {current_date} and time_slot: {time_slot}")
+
+#             current_date += timedelta(days=interval)
+#             # Ensure the loop stops if the next current_date exceeds end_date
+#             if current_date > end_date:
+#                 print(f"Reached the end date: {end_date}. Stopping further bookings.")
+#                 break
+def calculate_next_date(current_date, recurrence):
+    # Define the intervals in days for each recurrence type
     recurrence_days = {
         'daily': 1,
         'weekly': 7,
         'biweekly': 14,
         'monthly': 30,
-        'ten': 10,  # Added ten days option
-        'twenty': 20  # Added twenty days option
+        'ten': 10,
+        'twenty': 20
     }
 
+    # Adjust the date based on the recurrence type
     if recurrence in recurrence_days:
-        interval = recurrence_days[recurrence]
-        end_date = current_date + relativedelta(months=recurrence_period)
+        return current_date + timedelta(days=recurrence_days[recurrence])
+    else:
+        return current_date
 
-        print(f"Start Date: {current_date}")
-        print(f"End Date: {end_date}")
-        print(f"Recurrence Interval (days): {interval}")
-
-        while current_date <= end_date:
-            print(f"Current Date: {current_date}, End Date: {end_date}")
-            print(f"Checking availability for date: {current_date} and time_slot: {time_slot}")
-            day_index = get_day_index(current_date.strftime('%Y-%m-%d'))
-            slot_index = get_slot_index(time_slot)
-            print(f"Day index: {day_index}, Slot index: {slot_index}")
-
-            worker = Worker.query.get(worker_id)  # Fetch fresh instance
-            print(f"Worker availability before booking: {worker.availability}")
-
-            # Check if a booking already exists
-            existing_booking = Booking.query.filter_by(
-                client_id=client_id,
-                worker_id=worker_id,
-                date=current_date,
-                time_slot=time_slot
-            ).first()
-
-            if existing_booking:
-                print(f"Booking already exists for date: {current_date} and time_slot: {time_slot}")
-            elif worker and worker.availability[day_index][slot_index]:
-                new_booking = Booking(
-                    client_id=client_id,
-                    worker_id=worker_id,
-                    date=current_date,
-                    time_slot=time_slot,
-                    status=status,
-                    recurrence=recurrence,
-                    recurrence_period=recurrence_period  # Save the recurrence period
-                )
-                worker.availability[day_index][slot_index] = False
-                db.session.add(worker)
-                db.session.add(new_booking)
-                db.session.commit()  # Commit after each addition
-                print(f"Booking added for date: {current_date} and time_slot: {time_slot}")
-                print(f"Worker availability after booking: {worker.availability}")
-            else:
-                print(f"Worker not available on date: {current_date} and time_slot: {time_slot}")
-
-            current_date += timedelta(days=interval)
-            # Ensure the loop stops if the next current_date exceeds end_date
-            if current_date > end_date:
-                print(f"Reached the end date: {end_date}. Stopping further bookings.")
-                break
+def update_worker_availability(worker, date_str, time_slot):
+    day_index = get_day_index(date_str)
+    slot_index = get_slot_index(time_slot)
+    
+    if worker.availability[day_index][slot_index]:
+        worker.availability[day_index][slot_index] = False
+        db.session.add(worker)
+        print(f"Updated availability for worker {worker.id} on {date_str} at {time_slot}: {worker.availability}")
+    else:
+        print(f"Worker {worker.id} is already booked on {date_str} at {time_slot}.")
+def generate_unique_booking_id():
+    # Generate a unique booking_id; ensure it's unique in your database
+    return random.randint(1000, 9999)  # A simple method to generate a booking ID
 
 @booking_bp.route('/create-booking', methods=['POST'])
 @jwt_required()
 def create_booking():
-    print("create_booking route hit")
     data = request.get_json()
-    print(f"Received data: {data}")
-    if not all(key in data for key in ['client_id', 'date', 'time_slot', 'status']):
+
+    if not all(key in data for key in ['client_id', 'date', 'time_slot', 'status', 'workers']):
         return jsonify({'error': 'Bad Request', 'message': 'Missing required fields'}), 400
 
     client = Client.query.filter_by(id=data['client_id']).first()
-
     if not client:
         return jsonify({'error': 'Not Found', 'message': 'Client not found'}), 404
 
-    client_lat, client_lon = client.latitude, client.longitude
+    booking_id = generate_unique_booking_id()
 
-    workers = Worker.query.all()
-    closest_worker = None
-    min_distance = float('inf')
-    day_index = get_day_index(data['date'])
-    slot_index = get_slot_index(data['time_slot'])
-    print(f"Converted slot_index: {slot_index}")
-    if slot_index is None:
-        return jsonify({'error': 'Bad Request', 'message': 'Invalid time slot'}), 400
+    worker_ids = [worker.get('worker_id') for worker in data['workers']]
 
-    if 'worker_id' in data and data['worker_id'] is not None:
-        closest_worker = Worker.query.filter_by(id=data['worker_id']).first()
-        if not closest_worker or not closest_worker.availability[day_index][slot_index]:
-            return jsonify({'error': 'Conflict', 'message': 'Specified worker not available for the selected time slot'}), 409
-    else:
+    if len(worker_ids) == 1 and not worker_ids[0]:
+        nearest_worker = None
+        min_distance = float('inf')
+        workers = Worker.query.all()
+
         for worker in workers:
+            distance = haversine(client.latitude, client.longitude, worker.latitude, worker.longitude)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_worker = worker
+
+        if nearest_worker:
+            worker_ids[0] = nearest_worker.id
+        else:
+            return jsonify({'error': 'Not Found', 'message': 'No workers found nearby'}), 404
+
+    booking_instances = []
+
+    current_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+    recurrence = data.get('recurrence', 'monthly')
+    recurrence_period = data.get('recurrence_period', 1)  # Default to 1 period if not provided
+
+    for i in range(recurrence_period):
+        for worker_id in worker_ids:
+            worker = Worker.query.get(worker_id)
+            if not worker:
+                return jsonify({'error': 'Not Found', 'message': f'Worker with id {worker_id} not found'}), 404
+
+            day_index = get_day_index(current_date.strftime('%Y-%m-%d'))
+            slot_index = get_slot_index(data['time_slot'])
+
             if worker.availability[day_index][slot_index]:
-                worker_lat, worker_lon = worker.latitude, worker.longitude
-                distance = haversine(client_lat, client_lon, worker_lat, worker_lon)
-                if distance < min_distance:
-                    min_distance = distance
-                    closest_worker = worker
+                new_booking = Booking(
+                    booking_id=booking_id,
+                    client_id=client.id,
+                    worker_id=worker.id,
+                    date=current_date,
+                    time_slot=data['time_slot'],
+                    status=data['status'],
+                    recurrence=recurrence,
+                    recurrence_period=recurrence_period
+                )
 
-        if not closest_worker:
-            return jsonify({'error': 'Conflict', 'message': 'No available workers found for the selected time slot'}), 409
+                db.session.add(new_booking)
+                booking_instances.append(new_booking)
 
-    # Check if a booking already exists
-    existing_booking = Booking.query.filter_by(
-        client_id=client.id,
-        worker_id=closest_worker.id,
-        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-        time_slot=data['time_slot']
-    ).first()
+                update_worker_availability(worker, current_date.strftime('%Y-%m-%d'), data['time_slot'])
+            else:
+                print(f"Worker {worker.id} not available on {current_date.strftime('%Y-%m-%d')} at {data['time_slot']}")
 
-    if existing_booking:
-        return jsonify({'error': 'Conflict', 'message': 'Booking already exists for the selected time slot'}), 409
+        current_date = calculate_next_date(current_date, recurrence)
 
-    new_booking = Booking(
-        client_id=client.id,
-        worker_id=closest_worker.id,
-        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-        time_slot=data['time_slot'],
-        status=data['status'],
-        recurrence=data.get('recurrence'),
-        recurrence_period=data.get('recurrence_period')  # Save the recurrence period
-    )
+    db.session.commit()
 
-    print(f"Worker availability before booking: {closest_worker.availability}")
-
-    closest_worker.availability[day_index][slot_index] = False
-    db.session.add(closest_worker)
-    db.session.add(new_booking)
-    db.session.commit()  # Ensure the availability change is committed
-
-    print(f"Worker availability after booking: {closest_worker.availability}")
-
-    if 'recurrence' in data:
-        recurrence_period = data.get('recurrence_period', 1)  # Default to 1 month if not provided
-        add_recurring_bookings(client.id, closest_worker.id, data['date'], data['time_slot'], data['status'], data['recurrence'], recurrence_period)
-
-    return jsonify(new_booking.to_dict()), 201
+    return jsonify([booking.to_dict() for booking in booking_instances]), 201
 
 @booking_bp.route('/booking/<int:booking_id>/workers', methods=['GET'])
 def get_workers_by_booking(booking_id):
