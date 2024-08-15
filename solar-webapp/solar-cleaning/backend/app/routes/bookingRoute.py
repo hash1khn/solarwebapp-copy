@@ -130,25 +130,52 @@ def generate_unique_booking_id():
         max_booking_id = 1000  # Start from 1001 if there are no existing bookings
     return max_booking_id + 1  # Increment to generate the next unique booking_id
  # A simple method to generate a booking ID
+def find_nearest_worker(client_location, available_workers):
+    nearest_worker = None
+    shortest_distance = None
 
+    client_lat, client_lon = client_location
+
+    for worker in available_workers:
+        worker_lat = worker.latitude
+        worker_lon = worker.longitude
+        distance = haversine(client_lat, client_lon, worker_lat, worker_lon)
+
+        if shortest_distance is None or distance < shortest_distance:
+            shortest_distance = distance
+            nearest_worker = worker
+
+    return nearest_worker
+ 
 @booking_bp.route('/create-booking', methods=['POST'])
 @jwt_required()
 def create_booking():
     data = request.get_json()
 
     # Validate the required fields
-    if not all(key in data for key in ['client_id', 'date', 'time_slot', 'status', 'worker_ids']):
+    if not all(key in data for key in ['client_id', 'date', 'time_slot', 'status']):
         return jsonify({'error': 'Bad Request', 'message': 'Missing required fields'}), 400
 
     client = Client.query.filter_by(id=data['client_id']).first()
     if not client:
         return jsonify({'error': 'Not Found', 'message': 'Client not found'}), 404
 
+    client_location = (client.latitude, client.longitude)
+
     # Generate a unique booking_id to be shared among all worker bookings
     booking_id = generate_unique_booking_id()
 
-    # Extract worker_ids from the request
-    worker_ids = data['worker_ids']
+    # If worker_ids are provided, use them; otherwise, find the nearest worker
+    worker_ids = data.get('worker_ids')
+    if not worker_ids:
+        # Find all available workers for the given time slot and date
+        available_workers = Worker.query.all()
+        nearest_worker = find_nearest_worker(client_location, available_workers)
+
+        if not nearest_worker:
+            return jsonify({'error': 'Not Found', 'message': 'No available workers found'}), 404
+
+        worker_ids = [nearest_worker.id]
 
     booking_instances = []
 
@@ -187,7 +214,7 @@ def create_booking():
                 current_date = next_date
 
                 new_booking = Booking(
-                    booking_id=booking_id,  # Use the same booking_id for all workers
+                    booking_id=generate_unique_booking_id(),  # Generate a new booking_id for each recurrence
                     client_id=client.id,
                     worker_id=worker.id,
                     date=current_date,
