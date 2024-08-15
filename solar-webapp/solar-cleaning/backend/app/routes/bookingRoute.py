@@ -296,92 +296,93 @@ def get_booking_by_id(booking_id):
 def update_booking(booking_id):
     data = request.get_json()
 
-    # Fetch all booking instances with the provided booking_id
-    bookings = Booking.query.filter_by(booking_id=booking_id).all()
-    if not bookings:
-        return jsonify({'error': 'Not Found', 'message': f'No bookings found with booking ID {booking_id}'}), 404
+    # Fetch the booking instances by booking_id
+    existing_bookings = Booking.query.filter_by(booking_id=booking_id).all()
 
-    # Track the old booking details for availability adjustment
-    old_booking_details = [
-        {
-            'worker_id': booking.worker_id,
-            'date': booking.date,
-            'time_slot': booking.time_slot,
-        }
-        for booking in bookings
-    ]
+    if not existing_bookings:
+        return jsonify({'error': 'Not Found', 'message': 'Booking not found'}), 404
 
-    # Update client details if provided
-    if 'client_id' in data:
-        client = Client.query.get(data['client_id'])
-        if not client:
-            return jsonify({'error': 'Not Found', 'message': f'Client with ID {data["client_id"]} not found'}), 404
-        for booking in bookings:
-            booking.client_id = client.id
+    new_worker_ids = data['worker_ids']
+    current_worker_count = len(existing_bookings)
+    new_worker_count = len(new_worker_ids)
 
-    # Update booking details
-    if 'date' in data:
-        new_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
-        for booking in bookings:
-            booking.date = new_date
+    # Handle removing workers
+    if new_worker_count < current_worker_count:
+        # Remove excess bookings and update availability
+        for i in range(new_worker_count, current_worker_count):
+            booking_to_remove = existing_bookings.pop(i)
+            worker_to_update = Worker.query.get(booking_to_remove.worker_id)
+            if worker_to_update:
+                day_index = get_day_index(data['date'])
+                slot_index = get_slot_index(data['time_slot'])
+                worker_to_update.availability[day_index][slot_index] = True  # Set availability back to true
+                db.session.delete(booking_to_remove)
+                db.session.add(worker_to_update)
 
-    if 'time_slot' in data:
-        new_time_slot = data['time_slot']
-        for booking in bookings:
-            booking.time_slot = new_time_slot
+    # Handle adding new workers
+    elif new_worker_count > current_worker_count:
+        for i in range(current_worker_count, new_worker_count):
+            worker_id = new_worker_ids[i]
+            worker = Worker.query.get(worker_id)
+            if not worker:
+                return jsonify({'error': 'Not Found', 'message': f'Worker with id {worker_id} not found'}), 404
 
-    if 'status' in data:
-        new_status = data['status']
-        for booking in bookings:
-            booking.status = new_status
+            # Check worker availability
+            day_index = get_day_index(data['date'])
+            slot_index = get_slot_index(data['time_slot'])
+            if not worker.availability[day_index][slot_index]:
+                return jsonify({'error': 'Worker Unavailable', 'message': f'Worker with id {worker_id} is not available for the selected date and time'}), 400
 
-    if 'recurrence' in data:
-        new_recurrence = data['recurrence']
-        for booking in bookings:
-            booking.recurrence = new_recurrence
+            # Create a new booking for the additional worker
+            new_booking = Booking(
+                booking_id=booking_id,  # Use the same booking_id for all workers
+                client_id=existing_bookings[0].client_id,  # Assuming client_id remains the same
+                worker_id=worker_id,
+                date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+                time_slot=data['time_slot'],
+                status=data['status'],
+                recurrence=data.get('recurrence', existing_bookings[0].recurrence),
+                recurrence_period=data.get('recurrence_period', existing_bookings[0].recurrence_period)
+            )
 
-    if 'recurrence_period' in data:
-        new_recurrence_period = data['recurrence_period']
-        for booking in bookings:
-            booking.recurrence_period = new_recurrence_period
+            # Update worker availability
+            worker.availability[day_index][slot_index] = False
 
-    # Update worker details and availability if provided
-    if 'worker_ids' in data:
-        new_worker_ids = data['worker_ids']
-        if len(new_worker_ids) != len(bookings):
-            return jsonify({'error': 'Bad Request', 'message': 'Number of worker_ids must match the number of bookings'}), 400
+            db.session.add(new_booking)
+            db.session.add(worker)
+            existing_bookings.append(new_booking)
 
-        for i, booking in enumerate(bookings):
-            old_worker_id = old_booking_details[i]['worker_id']
-            new_worker_id = new_worker_ids[i]
+    # Update existing bookings
+    for i, booking in enumerate(existing_bookings):
+        booking.date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+        booking.time_slot = data['time_slot']
+        booking.status = data['status']
+        booking.recurrence = data.get('recurrence', booking.recurrence)
+        booking.recurrence_period = data.get('recurrence_period', booking.recurrence_period)
 
-            # If the worker has changed, update the old worker's availability
-            if old_worker_id != new_worker_id:
-                old_worker = Worker.query.get(old_worker_id)
-                if old_worker:
-                    day_index = get_day_index(old_booking_details[i]['date'].strftime('%Y-%m-%d'))
-                    slot_index = get_slot_index(old_booking_details[i]['time_slot'])
-                    old_worker.availability[day_index][slot_index] = True
-                    db.session.add(old_worker)
+        worker_id = new_worker_ids[i]
+        worker = Worker.query.get(worker_id)
+        if not worker:
+            return jsonify({'error': 'Not Found', 'message': f'Worker with id {worker_id} not found'}), 404
 
-                # Update the booking with the new worker
-                new_worker = Worker.query.get(new_worker_id)
-                if not new_worker:
-                    return jsonify({'error': 'Not Found', 'message': f'Worker with ID {new_worker_id} not found'}), 404
+        booking.worker_id = worker.id
 
-                booking.worker_id = new_worker_id
+        # Update worker availability
+        day_index = get_day_index(data['date'])
+        slot_index = get_slot_index(data['time_slot'])
+        if worker.availability[day_index][slot_index]:
+            worker.availability[day_index][slot_index] = False
 
-                # Update new worker's availability
-                day_index = get_day_index(booking.date.strftime('%Y-%m-%d'))
-                slot_index = get_slot_index(booking.time_slot)
-                new_worker.availability[day_index][slot_index] = False
-                db.session.add(new_worker)
+        db.session.add(worker)
+        db.session.add(booking)
 
-    # Commit the changes to the database
-    db.session.commit()
+    try:
+        db.session.commit()
+        return jsonify({'message': 'Booking updated successfully'}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({'error': 'Database Error', 'message': str(e)}), 500
 
-    # Return the updated booking details
-    return jsonify([booking.to_dict() for booking in bookings]), 200
 
 #get all bookings instances
 @booking_bp.route('/all-instances', methods=['GET'])
