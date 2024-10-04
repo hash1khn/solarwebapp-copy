@@ -97,7 +97,7 @@ def get_slot_index(time_slot):
 #             if current_date > end_date:
 #                 print(f"Reached the end date: {end_date}. Stopping further bookings.")
 #                 break
-def calculate_next_date(current_date, recurrence, recurrence_period):
+def calculate_next_date(current_date, recurrence, occurrence_count):
     recurrence_days = {
         'daily': 1,
         'weekly': 7,
@@ -106,13 +106,18 @@ def calculate_next_date(current_date, recurrence, recurrence_period):
         'ten': 10,  # Added ten days option
         'twenty': 20  # Added twenty days option
     }
-    
-    if recurrence in recurrence_days:
-        interval = recurrence_days[recurrence]
-        next_date = current_date + timedelta(days=interval * recurrence_period)
-        return next_date
 
-    return current_date
+    # Get the interval in days
+    interval = recurrence_days.get(recurrence, 0)
+
+    if recurrence == 'monthly':
+        # For monthly recurrence, use relativedelta
+        next_date = current_date + relativedelta(months=occurrence_count)
+    else:
+        # For daily, weekly, biweekly, ten, or twenty, use timedelta
+        next_date = current_date + timedelta(days=interval * occurrence_count)
+
+    return next_date
 
 def update_worker_availability(worker, date_str, time_slot):
     day_index = get_day_index(date_str)
@@ -183,12 +188,18 @@ def create_booking():
         worker_ids = [nearest_worker.id]
 
     booking_instances = []
-    for recurrence_count in range(data.get('recurrence_period', 1)):
+    start_date = datetime.strptime(data['date'], '%Y-%m-%d').date()
+    recurrence_period = data.get('recurrence_period', 1)  # Default to 1 if not provided
+    recurrence = data.get('recurrence', 'weekly')
+
+    current_date = start_date
+
+    for recurrence_count in range(recurrence_period * 4):  # For 6 months and weekly recurrence, create 24 weeks (approx.)
         if recurrence_count > 0:
             # Increment booking_id for each recurrence
             booking_id = generate_unique_booking_id(booking_id)
 
-        current_date = calculate_next_date(datetime.strptime(data['date'], '%Y-%m-%d').date(), data['recurrence'], recurrence_count)
+        current_date = calculate_next_date(start_date, recurrence, recurrence_count)
 
         for worker_id in worker_ids:
             worker = Worker.query.get(worker_id)
@@ -203,8 +214,8 @@ def create_booking():
                 date=current_date,
                 time_slot=data['time_slot'],
                 status=data['status'],
-                recurrence=data.get('recurrence'),
-                recurrence_period=data.get('recurrence_period')
+                recurrence=recurrence,
+                recurrence_period=recurrence_period
             )
 
             # Update worker availability
@@ -419,6 +430,69 @@ def get_bookings_by_instance_id(booking_instance_id):
     bookings_list = [booking.to_dict() for booking in bookings]
     
     return jsonify(bookings_list), 200
+
+@booking_bp.route('/search/client/<int:client_id>', methods=['GET'])
+@jwt_required()
+def search_by_client_id(client_id):
+    bookings = Booking.query.filter_by(client_id=client_id).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given client ID.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
+@booking_bp.route('/search/worker/<int:worker_id>', methods=['GET'])
+@jwt_required()
+def search_by_worker_id(worker_id):
+    bookings = Booking.query.filter_by(worker_id=worker_id).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given worker ID.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
+@booking_bp.route('/search/worker/name/<string:worker_name>', methods=['GET'])
+@jwt_required()
+def search_by_worker_name(worker_name):
+    bookings = Booking.query.join(Worker).filter(Worker.name.ilike(f'%{worker_name}%')).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given worker name.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
+@booking_bp.route('/search/client/name/<string:client_name>', methods=['GET'])
+@jwt_required()
+def search_by_client_name(client_name):
+    bookings = Booking.query.join(Client).filter(Client.name.ilike(f'%{client_name}%')).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given client name.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
+@booking_bp.route('/search/date/<string:date>', methods=['GET'])
+@jwt_required()
+def search_by_date(date):
+    bookings = Booking.query.filter_by(date=date).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given date.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
+@booking_bp.route('/search/slot/<string:time_slot>', methods=['GET'])
+@jwt_required()
+def search_by_time_slot(time_slot):
+    bookings = Booking.query.filter_by(time_slot=time_slot).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given time slot.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+@booking_bp.route('/search/status/<string:status>', methods=['GET'])
+@jwt_required()
+def search_by_status(status):
+    bookings = Booking.query.filter_by(status=status).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given status.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+@booking_bp.route('/search/recurrence/<string:recurrence>', methods=['GET'])
+@jwt_required()
+def search_by_recurrence(recurrence):
+    bookings = Booking.query.filter_by(recurrence=recurrence).all()
+    if not bookings:
+        return jsonify({'message': 'No bookings found for the given recurrence type.'}), 404
+    return jsonify([booking.to_dict() for booking in bookings]), 200
+
 
 #manipulated json format sending(aawaiz)
 @booking_bp.route('/all-booking-details', methods=['GET'])

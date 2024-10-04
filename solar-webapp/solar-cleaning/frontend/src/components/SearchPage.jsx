@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Table, Input, Button, Modal, Select } from "antd";
+import { Table, Input,Form, Button, Modal, Select } from "antd";
 import { Link } from "react-router-dom";
+
 import {
     getAllWorkers,
     getById,
@@ -18,6 +19,7 @@ import {
     getByStatus,
     getByTimeSlot,
     getByRecurrence,
+    updateBooking,
 } from "../features/bookings/bookingsSlice";
 import {
     getAllClients,
@@ -57,6 +59,13 @@ const SearchPage = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [workerModalVisible, setWorkerModalVisible] = useState(false);
     const [selectedWorker, setSelectedWorker] = useState([]);
+    const [editWorkerModalVisible, setEditWorkerModalVisible] = useState(false); // For Edit Worker modal visibility
+    const [availableWorkers, setAvailableWorkers] = useState([]); // To store all available workers for the dropdown
+    const [selectedWorkerId, setSelectedWorkerId] = useState(null); // To store the selected worker ID
+    const [currentBookingId, setCurrentBookingId] = useState(null); // Store the booking ID for which the worker is being edited
+    const[selectedWorkerIds,setSelectedWorkerIds]=useState([]); // Store the
+    const [currentBookingDetails,setCurrentBookingDetails] = useState(null);
+    const [form] = Form.useForm(); // Store the
 
     const dispatch = useDispatch();
     const clients = useSelector((state) => state?.clients?.clients);
@@ -72,7 +81,100 @@ const SearchPage = () => {
         setSearchQuery("");
         fetchData(option);
     };
+    const fetchBookingDetails = async (id) => {
+        try {
+            console.log("Fetching booking details for ID:", id);
+            const { payload: bookings } = await dispatch(getAllBookings());
+            const booking = bookings.find(
+                (booking) => booking.id === parseInt(id)
+            );
+            console.log("Fetched booking details:", booking);
+            return booking || null;
+        } catch (error) {
+            console.error("Error fetching booking details:", error);
+            return null;
+        }
+    };
+    const handleUpdateWorkerInBooking = async () => {
+        console.log("Selected Worker IDs at form submit:", selectedWorkerIds);
+        // Ensure selectedWorkerIds is always defined as an array
+        if (!selectedWorkerIds || selectedWorkerIds.length === 0) {
+            console.log("Selected Worker IDs:", selectedWorkerIds);
+            console.error("No worker IDs selected or available.");
+            return;
+        }
+        // Find the selected worker details
+        const selectedWorkerDetails = availableWorkers.find(
+            (worker) => worker.id === selectedWorkerId  // Match by worker ID
+        );
+        
+    
+        if (!selectedWorkerDetails) {
+            alert("Worker not found!");
+            return;
+        }
+        setSelectedWorkerId(worker.id);
 
+    
+        // Replace the edited worker in the worker_ids array
+        const updatedWorkerIds = selectedWorkerIds.map((id) =>
+            id === selectedWorkerId ? selectedWorkerDetails.id : id
+        );
+        console.log("Updated Worker IDs:", updatedWorkerIds); 
+    
+        // Merge the updated workers with the rest of the booking details
+        const updatedData = {
+            ...currentBookingDetails,  // Merge existing booking details
+            worker_ids: updatedWorkerIds  // Update the worker IDs
+        };
+    
+        try {
+            // Dispatch the updateBooking action with the merged data
+            await dispatch(
+                updateBooking({ id: currentBookingId, updatedData })
+            ).unwrap();
+    
+            setEditWorkerModalVisible(false);  // Close the modal after update
+            form.resetFields();  // Reset form fields
+        } catch (error) {
+            console.error("Error updating worker:", error);
+        }
+    };
+    
+    
+    
+    
+
+    const handleEditWorker = async (worker, bookingId) => {
+        try {
+            // Fetch the full booking details from the backend using the bookingId
+            const bookingDetails = await fetchBookingDetails(bookingId);
+            if (!bookingDetails) {
+                alert("Booking not found!");
+                return;
+            }
+    
+            // Fetch all workers from the backend and set them in state
+            const { payload: allWorkers } = await dispatch(getAllWorkers());
+            if (!allWorkers) {
+                alert("Unable to fetch workers");
+                return;
+            }
+            setAvailableWorkers(allWorkers);  // Set the available workers for the dropdown
+            // Set the current booking details in state (without changing the workers yet)
+            setCurrentBookingDetails(bookingDetails); 
+            setSelectedWorkerId(worker.id);
+             // Store full booking details // Set current worker IDs (assigned to this booking)
+            
+            // Open the modal for editing workers
+            setEditWorkerModalVisible(true);
+        } catch (error) {
+            console.error("Error fetching booking or workers:", error);
+            alert("An error occurred while fetching booking or workers.");
+        }
+    };
+    
+    
     const fetchData = (option) => {
         if (option === "Clients") {
             dispatch(getAllClients()).then((action) => {
@@ -583,11 +685,17 @@ const SearchPage = () => {
                       render: (text, record) => (
                           <Button
                               onClick={() => {
-                                  setSelectedWorker(record.workers);
-                                  setWorkerModalVisible(true);
+                                const workerIds = record.workers.map(worker => worker.id);
+                                console.log("Worker IDs:", workerIds); 
+                                setSelectedWorkerIds(workerIds);
+                                setSelectedWorker(record.workers);
+                                setCurrentBookingId(record.booking_id);
+                                setWorkerModalVisible(true);
+
                               }}>
                               Show Workers
                           </Button>
+                          
                       ),
                   },
                   {
@@ -798,10 +906,45 @@ const SearchPage = () => {
                     {selectedWorker.map((worker) => (
                         <li key={worker.id}>
                             {worker.name} - {worker.area}
+                             <Button
+                    style={{ marginLeft: '5px' }}
+                    onClick={() => handleEditWorker(worker,currentBookingId)}
+                >
+                    Edit Worker
+                </Button>
                         </li>
                     ))}
                 </ul>
             </Modal>
+            
+            <Modal
+    title="Edit Worker"
+    open={editWorkerModalVisible}
+    onCancel={() => setEditWorkerModalVisible(false)}
+    footer={null}
+>
+    <Form 
+    onFinish={handleUpdateWorkerInBooking}
+    initialValues={{ worker: selectedWorkerId }} >
+        <Form.Item label="Select Worker" name="worker">
+            <Select
+                placeholder="Select a worker"
+                value={selectedWorkerId}
+                onChange={(value) => setSelectedWorkerId(value)}
+            >
+                {availableWorkers.map((worker) => (
+                    <Select.Option key={worker.id} value={worker.id}>
+                        {worker.name}
+                    </Select.Option>
+                ))}
+            </Select>
+        </Form.Item>
+        <Button type="primary" htmlType="submit">
+            Update Worker
+        </Button>
+    </Form>
+</Modal>
+
 
             <Modal
                 title="Worker Availability"
@@ -842,6 +985,7 @@ const SearchPage = () => {
                     )}
                 </div>
             </Modal>
+
 
             <Footer></Footer>
         </>
